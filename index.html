@@ -190,6 +190,9 @@
         scrollZoom: false 
     });
 
+    // ★追加：スマホの二本指での回転を禁止（拡大・縮小はそのまま機能します）
+    map.touchZoomRotate.disableRotation();
+
     // ★追加：＋・−ボタン（ナビゲーションコントロール）を画面右上に追加
     // 今回は回転を禁止しているため、コンパス（方位）ボタンは非表示にします
     map.addControl(new maplibregl.NavigationControl({
