@@ -2,7 +2,8 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta
+    name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>全国原爆碑マップ</title>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -11,22 +12,34 @@
     <script src="prefecture_label.js"></script>
     <script src="custom_style.js"></script>
     <style>
-        html, body { 
-            margin: 0; 
-            padding: 0; 
-            width: 100%; 
-            height: 100%; 
-            overflow: hidden; 
+        :root {
+            --app-height: 100dvh;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: var(--app-height);
+            min-height: 0;
+            overflow: hidden;
+            overscroll-behavior: none;
+        }
+
+        body {
+            position: fixed;
+            inset: 0;
             touch-action: none;
         }
-        #map { 
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100vw; 
-            height: 100vh;
-            height: 100dvh; 
+
+        #map {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
         }
+
         
         /* ポップアップ外枠の調整 */
         .maplibregl-popup-content {
@@ -206,6 +219,49 @@
 
     // ★追加：スマホの二本指での回転を禁止（拡大・縮小はそのまま機能します）
     map.touchZoomRotate.disableRotation();
+
+    // スマホ・QRアプリ内ブラウザの実表示領域に地図を合わせる
+    function updateViewportHeight() {
+        const viewportHeight = window.visualViewport
+            ? window.visualViewport.height
+            : window.innerHeight;
+
+        document.documentElement.style.setProperty(
+            '--app-height',
+            `${Math.round(viewportHeight)}px`
+        );
+
+        // CSSの高さ変更が反映された後でMapLibreに再計算させる
+        requestAnimationFrame(() => {
+            map.resize();
+        });
+    }
+
+    // 初回表示
+    updateViewportHeight();
+
+    // 通常の画面サイズ変更・回転
+    window.addEventListener('resize', updateViewportHeight, {
+        passive: true
+    });
+
+    // QRリーダー内ブラウザなどで、表示領域だけが変わった場合
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener(
+            'resize',
+            updateViewportHeight,
+            { passive: true }
+        );
+    }
+
+    // ページキャッシュから復帰した場合にも再計算
+    window.addEventListener('pageshow', () => {
+        updateViewportHeight();
+
+        // アプリ内ブラウザのツールバー確定を待って、もう一度調整
+        setTimeout(updateViewportHeight, 100);
+        setTimeout(updateViewportHeight, 500);
+    });
 
     // ★追加：＋・−ボタン（ナビゲーションコントロール）を画面右上に追加
     // 今回は回転を禁止しているため、コンパス（方位）ボタンは非表示にします
