@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>全国原爆碑マップ</title>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <script src="data.js"></script>
+    <script src="prefecture.js"></script>
+    <script src="prefecture_label.js"></script>
+    <script src="custom_style.js"></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        
+        /* ポップアップ外枠の調整 */
+        .maplibregl-popup-content {
+            padding: 45px 15px 15px 15px !important; /* ★上部にバツ印専用の空間（45px）をしっかり確保 */
+            border-radius: 8px;
+        }
+
+        /* 中身のスクロールエリア */
+        .popup-content { 
+            font-family: sans-serif; 
+            font-size: 16px; 
+            width: 500px;       /* 横幅 */
+            max-height: 300px;  /* 縦幅の最大 */
+            overflow-y: auto;   /* はみ出したらスクロール */
+            padding-right: 10px; /* スクロールバーと文字が重ならないように右余白 */
+        }
+
+        /* ポップアップ内の画像 */
+        .popup-image { width: 100%; height: auto; display: block; margin: 10px 0; border-radius: 4px; }
+
+        /* バツ印（閉じるボタン）のサイズと位置 */
+        .maplibregl-popup-close-button {
+            font-size: 28px;
+            color: #666;
+            font-weight: bold;
+            width: 40px;
+            height: 40px;
+            line-height: 40px;
+            padding: 0;
+            top: 2px;     /* 上の45pxの余白の中に収まるように配置 */
+            right: 5px;
+        }
+        .maplibregl-popup-close-button:hover { background-color: #eee; border-radius: 8px; }
+
+        /* ★追加：凡例のスタイル */
+        .legend {
+            position: absolute;
+            bottom: 30px; /* 画面下からの位置 */
+            right: 10px;  /* 画面右からの位置 */
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            font-family: sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            z-index: 10; /* 地図より上に表示 */
+            width: 120px;
+        }
+        .legend h4 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 5px;
+        }
+        .legend div {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .legend-key {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%; /* 丸いマークにする */
+            margin-right: 8px;
+            border: 1px solid #fff; /* ピンと同じく白枠を少しつける */
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        }
+        /* ★追加：地図上に表示するタイトルパネル */
+        .map-title {
+            position: absolute;
+            top: 20px;   /* 画面上からの位置 */
+            left: 20px;  /* 画面左からの位置 */
+            background: rgba(255, 255, 255, 0.9); /* 背景（少し透ける白） */
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2); /* 影をつけて浮き上がらせる */
+            font-family: sans-serif;
+            font-size: 28px;   /* 文字の大きさ */
+            font-weight: bold; /* 太字 */
+            color: #333;
+            z-index: 10; /* 地図より手前に表示する */
+        }
+        /* ★追加：画像拡大用のモーダル（ライトボックス）のスタイル */
+        #image-modal {
+            display: none; /* 初期状態は非表示 */
+            position: fixed;
+            z-index: 1000; /* 地図やポップアップより手前に表示 */
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8); /* 背景を半透明の黒に */
+            cursor: pointer; /* クリックで閉じられることを示すカーソル */
+        }
+        #expanded-image {
+            margin: auto;
+            display: block;
+            max-width: 90%;
+            max-height: 90%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); /* 画面のど真ん中に配置 */
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="image-modal" onclick="closeImageModal()">
+    <img id="expanded-image" src="">
+</div>
+
+<div class="map-title">全国原爆碑マップ</div>
+
+<div id="map"></div>
+
+<div class="legend" id="legend">
+    <h4>碑の建立目的</h4>
+    <div><span class="legend-key" style="background-color: #ff4500;"></span>慰霊</div>
+    <div><span class="legend-key" style="background-color: #32cd32;"></span>混合</div>
+    <div><span class="legend-key" style="background-color: #1e90ff;"></span>非核平和</div>
+    <div><span class="legend-key" style="background-color: #808080;"></span>その他</div>
+    <div style="margin-top: 5px; border-top: 1px solid #ccc; padding-top: 8px; width: 100%;"></div>
+    <div><svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" fill="#333333" stroke="#ffffff" stroke-width="2"/><circle cx="12" cy="13" r="4" fill="#ffffff"/></svg>写真あり</div>
+    <div><svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5V7L12 12 2 7v10z" fill="#333333" stroke="#ffffff" stroke-width="2"/></svg>3Dデータあり</div>
+</div>
+
+<script>
+    // 1. 地図の初期化
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: myCustomStyle,
+        center: [136.00, 35.50], // ★CSVの中心付近に合わせて調整してください
+        zoom: 4,
+        minZoom: 3,
+        maxZoom: 17,
+        maxBounds: [ [110.5, 10.0], [160.5, 50.0] ], // ★必要に応じて調整
+        dragRotate: false,
+        pitchWithRotate: false,
+        keyboard: false,
+        
+        // ★追加：デフォルトの滑らかなマウスホイールズームを無効化
+        scrollZoom: false 
+    });
+
+    // ★追加：＋・−ボタン（ナビゲーションコントロール）を画面右上に追加
+    // 今回は回転を禁止しているため、コンパス（方位）ボタンは非表示にします
+    map.addControl(new maplibregl.NavigationControl({
+        showCompass: false 
+    }), 'bottom-left');
+
+    // ★追加：マウスホイールで1段階ずつカクカクとズームさせる処理
+    map.getCanvas().addEventListener('wheel', (e) => {
+        e.preventDefault(); 
+        
+        if (map.isZooming()) return;
+
+        // ① マウスポインターの画面上の位置を、地図上の座標（経度・緯度）に変換
+        const point = map.unproject([e.offsetX, e.offsetY]);
+        const currentZoom = map.getZoom();
+
+        if (e.deltaY < 0) {
+            // 上にスクロール（拡大）：ポインターの位置を中心にズームイン
+            map.easeTo({ zoom: Math.floor(currentZoom) + 1, around: point, duration: 300 });
+        } else {
+            // 下にスクロール（縮小）：ポインターの位置を中心にズームアウト
+            map.easeTo({ zoom: Math.ceil(currentZoom) - 1, around: point, duration: 300 });
+        }
+    });
+
+    // 地図の基本データの読み込みが完了したら実行
+    map.on('load', () => {
+        
+        // ==========================================
+        // ★追加：ズーム16以上で地理院タイルの写真を表示し、ベクトルタイルを透けさせる
+        // ==========================================
+        map.addSource('gsi-photo-source', {
+            type: 'raster',
+            tiles: ['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'],
+            tileSize: 256,
+            attribution: "<a href='https://maps.gsi.go.jp/development/ichiran.html' target='_blank'>地理院タイル</a>"
+        });
+
+        // カスタムスタイルの最下層（一番最初のレイヤー）のIDを取得して、その下に写真を潜り込ませる
+        const layers = map.getStyle().layers;
+        let firstLayerId = layers.length > 0 ? layers[0].id : undefined;
+
+        map.addLayer({
+            id: 'gsi-photo-layer',
+            type: 'raster',
+            source: 'gsi-photo-source',
+            minzoom: 17,
+            paint: { 'raster-opacity': 1.0 }
+        }, firstLayerId);
+
+        // MapLibreではレイヤーの「乗算」ができないため、背景やポリゴンをズーム16以上で半透明にして下の写真を透けさせる
+        layers.forEach(layer => {
+            if (layer.type === 'background') {
+                map.setPaintProperty(layer.id, 'background-opacity', [
+                    'interpolate', ['linear'], ['zoom'],
+                    15.9, 1.0, // ズーム15.9までは不透明
+                    16, 0.6    // ズーム16以上は半透明(0.6)にして透けさせる
+                ]);
+            } else if (layer.type === 'fill') {
+                map.setPaintProperty(layer.id, 'fill-opacity', [
+                    'interpolate', ['linear'], ['zoom'],
+                    15.9, 1.0,
+                    16, 0.6
+                ]);
+            }
+        });
+        // ==========================================
+
+        // --- 1. 背景を隠すための真っ白なレイヤー ---
+        map.addLayer({
+            id: 'background-mask',
+            type: 'background',
+            paint: { 'background-color': '#ffffff' },
+            maxzoom: 9
+        });
+
+        // --- 2. 都道府県ポリゴンデータの追加 ---
+        map.addSource('prefecture-source', {
+            type: 'geojson',
+            data: prefData
+        });
+
+        // ① 塗りつぶし用のレイヤー（ここの枠線は不要になるので透明や非表示でもOKですが、そのまま残しておいても問題ありません）
+        map.addLayer({
+            id: 'prefecture-layer',
+            type: 'fill',
+            source: 'prefecture-source',
+            maxzoom: 9,
+            paint: {
+                'fill-color': '#ffffff', 
+                'fill-outline-color': '#cccccc', 
+                'fill-opacity': 1.0 
+            }
+        });
+
+        // ★追加：境界線の太さを自由に調整するための「線」専用レイヤー
+        map.addLayer({
+            id: 'prefecture-line-layer',
+            type: 'line',
+            source: 'prefecture-source',
+            maxzoom: 9,
+            paint: {
+                'line-color': '#cccccc', // 線の色（濃くしたい場合は '#999999' や '#666666' など）
+                'line-width': 1.5        // ★ここで太さを指定（1.5 や 3 など自由に調整してください）
+            }
+        });
+
+        // --- 3. 都道府県ラベル（名前）の追加 ---
+        map.addSource('prefecture-label-source', {
+            type: 'geojson',
+            data: prefLabelData 
+        });
+        map.addLayer({
+            id: 'prefecture-labels',
+            type: 'symbol',
+            source: 'prefecture-label-source',
+            minzoom: 7, 
+            maxzoom: 9, 
+            layout: {
+                'text-field': ['get', '都道府県'], 
+                'text-size': 16,                 
+                'text-anchor': 'center'          
+            },
+            paint: {
+                'text-color': '#333333',         
+                'text-halo-color': '#ffffff',    
+                'text-halo-width': 2             
+            }
+        });
+
+        // ==========================================
+        // --- 5. ポイントデータ（ピン）の追加 ---
+        // ※植生図より後に書くことで、ピンが一番上に乗ります
+        // ==========================================
+        map.addSource('my-csv-points', {
+            type: 'geojson',
+            data: myData 
+        });
+
+        map.addLayer({
+            id: 'points-layer',
+            type: 'circle',
+            source: 'my-csv-points',
+            paint: {
+                'circle-radius': 8,
+                'circle-color': [
+                    'match',
+                    ['get', '建立目的'],
+                    '慰霊', '#ff4500', 
+                    '混合', '#32cd32',         
+                    '非核平和', '#1e90ff',       
+                    '#808080'                  
+                ],
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#ffffff'
+            }
+        });
+
+        // 1. 軽量なSVGカメラアイコンを作成して地図に登録
+        const cameraSvg = '<svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" fill="#333333" stroke="#ffffff" stroke-width="2"/><circle cx="12" cy="13" r="4" fill="#ffffff"/></svg>';
+        const cameraImg = new Image();
+        cameraImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(cameraSvg);
+        cameraImg.onload = () => {
+            if (!map.hasImage('camera-icon')) {
+                map.addImage('camera-icon', cameraImg);
+            }
+        };
+
+        // 2. 写真があるピンの上にSVGカメラアイコンを表示するレイヤー
+        map.addLayer({
+            id: 'points-image-icon-layer',
+            type: 'symbol',
+            source: 'my-csv-points',
+            minzoom: 7, // ★ズームレベル10以上で表示
+            filter: [
+                'any',
+                ['all', ['!=', ['coalesce', ['get', '画像'], ''], ''], ['!=', ['coalesce', ['get', '画像'], ''], '記載なし']],
+                ['all', ['!=', ['coalesce', ['get', '画像URL'], ''], ''], ['!=', ['coalesce', ['get', '画像URL'], ''], '記載なし']],
+                ['all', ['!=', ['coalesce', ['get', '写真'], ''], ''], ['!=', ['coalesce', ['get', '写真'], ''], '記載なし']]
+            ],
+            layout: {
+                'icon-image': 'camera-icon',
+                'icon-size': 1.2,
+                'icon-offset': [8, -8], // ★ポイントの右上に少し重なるようにずらす
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true
+            }
+        });
+
+        // 3. 軽量なSVG 3Dアイコン（立体キューブ）を作成して地図に登録
+        const cubeSvg = '<svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5V7L12 12 2 7v10z" fill="#333333" stroke="#ffffff" stroke-width="2"/></svg>';
+        const cubeImg = new Image();
+        cubeImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(cubeSvg);
+        cubeImg.onload = () => {
+            if (!map.hasImage('3d-icon')) {
+                map.addImage('3d-icon', cubeImg);
+            }
+        };
+
+        // 4. 3Dデータがあるピンの上にSVG 3Dアイコンを表示するレイヤー
+        map.addLayer({
+            id: 'points-3d-icon-layer',
+            type: 'symbol',
+            source: 'my-csv-points',
+            minzoom: 7,
+            filter: [
+                'all',
+                ['!=', ['coalesce', ['get', '3Ddata'], ''], ''],
+                ['!=', ['coalesce', ['get', '3Ddata'], ''], '記載なし']
+            ],
+            layout: {
+                'icon-image': '3d-icon',
+                'icon-size': 1.2,
+                // ★カメラアイコンの有無を自動判定して位置を切り替える
+                'icon-offset': [
+                    'case',
+                    [
+                        'any',
+                        ['all', ['!=', ['coalesce', ['get', '画像'], ''], ''], ['!=', ['coalesce', ['get', '画像'], ''], '記載なし']],
+                        ['all', ['!=', ['coalesce', ['get', '画像URL'], ''], ''], ['!=', ['coalesce', ['get', '画像URL'], ''], '記載なし']],
+                        ['all', ['!=', ['coalesce', ['get', '写真'], ''], ''], ['!=', ['coalesce', ['get', '写真'], ''], '記載なし']]
+                    ],
+                    ['literal', [23, -8]], // 写真がある場合は右にずらす
+                    ['literal', [8, -8]]   // 写真がない場合は通常の右上に配置
+                ],
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true
+            }
+        });
+    });
+
+    // ★追加：展開したスパイダーマーカーを保存・管理する配列
+    let spiderMarkers = [];
+
+    // ★追加：地図の何もないところをクリックしたら、展開しているピンを閉じる
+    map.on('click', (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: ['points-layer'] });
+        // クリックした場所にピンがない場合は展開を解除する
+        if (!features.length) {
+            spiderMarkers.forEach(marker => marker.remove());
+            spiderMarkers = [];
+        }
+    });
+
+    // 6. クリック時のポップアップ制御
+    map.on('click', 'points-layer', (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: ['points-layer'] });
+        if (!features.length) return;
+
+        const props = features[0].properties;
+        const coordinates = [parseFloat(props.経度), parseFloat(props.緯度)];
+        
+        // ★現在のズームレベルを取得
+        const currentZoom = map.getZoom();
+
+        // クリックされるたびに、前に展開していたものを一旦リセットして消す
+        spiderMarkers.forEach(marker => marker.remove());
+        spiderMarkers = [];
+
+        // ★追加：複数ピン かつ ズームレベル14未満（小縮尺）の場合
+        if (features.length > 1 && currentZoom < 14) {
+            // 展開やポップアップはせず、ポイントが分かれる程度の縮尺（例:ズーム15）までズームするだけ
+            map.flyTo({
+                center: coordinates,
+                zoom: 15, 
+                speed: 1.2,
+                essential: true
+            });
+            return; // ここで処理を終了する
+        }
+
+        // ① 目的地のポイントを画面の中心に正確にズームイン（移動）
+        // ※単一のピン、またはズーム14以上の場合は一気にズーム17まで寄る
+        map.flyTo({
+            center: coordinates,
+            zoom: 17, 
+            speed: 1.2,
+            essential: true
+        });
+
+        // ② 地図の移動が「完全に終わった瞬間」に展開・ポップアップ表示を行う
+        map.once('moveend', () => {
+            // ピンが重なっているかどうかの判定
+            if (features.length > 1) {
+                // 【複数ある場合】ポップアップではなく、地図上にマーカーとして直接展開する
+                const radius = 70; // 展開する引き出し線の長さ（ピクセル）
+                
+                // リストクリック用にデータを一時保存
+                window.clickedFeatures = features;
+                window.clickedCoord = coordinates;
+
+                // 中心点の目印（元のピン位置の正確な中心）
+                const centerContainer = document.createElement('div');
+                centerContainer.style.width = '0px';
+                centerContainer.style.height = '0px';
+                centerContainer.style.position = 'relative';
+                
+                const centerEl = document.createElement('div');
+                centerEl.style.width = '10px';
+                centerEl.style.height = '10px';
+                centerEl.style.background = '#ff4500';
+                centerEl.style.borderRadius = '50%';
+                centerEl.style.position = 'absolute';
+                centerEl.style.top = '-5px';
+                centerEl.style.left = '-5px';
+                centerEl.style.boxShadow = '0 0 5px rgba(0,0,0,0.5)';
+                centerContainer.appendChild(centerEl);
+
+                const centerMarker = new maplibregl.Marker({ element: centerContainer })
+                    .setLngLat(coordinates)
+                    .addTo(map);
+                spiderMarkers.push(centerMarker);
+
+                features.forEach((f, index) => {
+                    const angle = (index / features.length) * 2 * Math.PI - (Math.PI / 2);
+                    const xOffset = radius * Math.cos(angle);
+                    const yOffset = radius * Math.sin(angle);
+                    
+                    // 1つのピン用の要素をまとめるコンテナ（幅高さ0にして、起点を正確に配置）
+                    const spiderEl = document.createElement('div');
+                    spiderEl.style.position = 'relative';
+                    spiderEl.style.width = '0px';
+                    spiderEl.style.height = '0px';
+                    spiderEl.style.pointerEvents = 'none'; // コンテナ自体はクリック反応させない
+                    
+                    // 引き出し線の描画（起点を 0,0 に合わせるためトップを -1px）
+                    const lineAngle = angle * (180 / Math.PI);
+                    const line = document.createElement('div');
+                    line.style.position = 'absolute';
+                    line.style.top = '-1px'; // 線の高さ2pxの半分を上にずらして中心に合わせる
+                    line.style.left = '0px';
+                    line.style.width = `${radius}px`;
+                    line.style.height = '2px';
+                    line.style.background = '#999';
+                    line.style.transformOrigin = '0 50%';
+                    line.style.transform = `rotate(${lineAngle}deg)`;
+                    line.style.zIndex = '1';
+                    spiderEl.appendChild(line);
+
+                    // 先端の丸いボタン（起点を xOffset, yOffset に合わせるため、幅高さの半分を引く）
+                    const btn = document.createElement('div');
+                    const title = f.properties.碑名 || '名称不明';
+                    btn.style.position = 'absolute';
+                    btn.style.top = `${yOffset - 15}px`;
+                    btn.style.left = `${xOffset - 15}px`;
+                    btn.style.width = '30px';
+                    btn.style.height = '30px';
+                    btn.style.background = '#1e90ff';
+                    btn.style.borderRadius = '50%';
+                    btn.style.color = '#fff';
+                    btn.style.textAlign = 'center';
+                    btn.style.lineHeight = '30px';
+                    btn.style.cursor = 'pointer';
+                    btn.style.fontSize = '14px';
+                    btn.style.fontWeight = 'bold';
+                    btn.style.border = '2px solid #fff';
+                    btn.style.boxShadow = '0 0 5px rgba(0,0,0,0.5)';
+                    btn.style.zIndex = '3';
+                    btn.style.pointerEvents = 'auto'; // ボタンだけはクリック反応させる
+                    btn.title = title;
+                    btn.innerHTML = index + 1;
+                    btn.onclick = (event) => {
+                        event.stopPropagation(); // 地図自体のクリック反応を防ぐ
+                        showDetail(index);
+                    };
+                    spiderEl.appendChild(btn);
+
+                    // ボタンの近くに短い名前を表示
+                    const label = document.createElement('div');
+                    label.style.position = 'absolute';
+                    label.style.top = `${yOffset + 20}px`;
+                    label.style.left = `${xOffset - 40}px`;
+                    label.style.width = '80px';
+                    label.style.textAlign = 'center';
+                    label.style.fontSize = '11px';
+                    label.style.lineHeight = '1.2';
+                    label.style.color = '#333';
+                    label.style.zIndex = '3';
+                    label.style.textShadow = '1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff';
+                    label.innerHTML = `${title.substring(0, 8)}${title.length > 8 ? '...' : ''}`;
+                    spiderEl.appendChild(label);
+
+                    // 地図上にマーターとして追加
+                    const marker = new maplibregl.Marker({ element: spiderEl })
+                        .setLngLat(coordinates)
+                        .addTo(map);
+                    spiderMarkers.push(marker);
+                });
+            } else {
+                // 【1件だけの場合】直接詳細ポップアップを表示
+                renderPopup(features[0].properties, coordinates);
+            }
+        });
+    });
+
+    // ポップアップの中身を作って表示する関数（元のコードをそのまま独立させたもの）
+    window.renderPopup = function(props, coordinates) {
+        let imageHTML = '';
+        const imageUrl = props.画像 || props.画像URL || props.写真 || props.image || '';
+        if (imageUrl && imageUrl !== '記載なし') {
+            const imagePaths = imageUrl.split(',');
+            imagePaths.forEach(path => {
+                const cleanPath = path.trim();
+                if (cleanPath) {
+                    // ★ onclickイベントとcursor:pointerを追加
+                    imageHTML += `<img src="${cleanPath}" class="popup-image" alt="画像" style="cursor: pointer;" onclick="openImageModal('${cleanPath}')">`;
+                }
+            });
+        }
+
+        let urlHTML = '';
+        if (props.URL && props.URL !== '記載なし') {
+            urlHTML = `<a href="${props.URL}" target="_blank" style="display:inline-block; margin-top:10px; padding:5px 10px; background:#1e90ff; color:white; text-decoration:none; border-radius:4px;">詳細URLを開く</a>`;
+        }
+
+        let data3DHTML = '';
+        if (props['3Ddata'] && props['3Ddata'] !== '記載なし' && props['3Ddata'] !== '') {
+            data3DHTML = `
+                <p style="margin: 10px 0 5px 0;"><strong>3Dデータ:</strong></p>
+                <a href="${props['3Ddata']}" target="_blank" style="display:inline-block; padding:5px 10px; background:#4CAF50; color:white; text-decoration:none; border-radius:4px; font-weight:bold;">
+                    📦 3Dビューアを開く
+                </a>`;
+        }
+        
+        const popupContent = `
+            <div id="current-popup" class="popup-content">
+                <h3 style="margin:0 0 10px 0; border-bottom:2px solid #ccc;">${props.碑名 || '名称不明'}</h3>
+                <p><strong>設置場所:</strong> ${props.設置場所 || '不明'}</p>
+                <p><strong>建立年:</strong> ${props.建立年 || '不明'}</p>
+                <p><strong>建立団体:</strong> ${props.建立団体 || '不明'}</p>
+                <p><strong>碑文:</strong> ${props.碑文 || '記載なし'}</p>
+                ${data3DHTML}
+                ${urlHTML}
+                ${imageHTML}
+            </div>
+        `;
+
+        new maplibregl.Popup({ 
+            offset: 15,
+            closeButton: true,
+            closeOnClick: true,
+            maxWidth: '700px',
+            autoPan: false,
+            autoFocus: false
+        })
+        .setLngLat(coordinates)
+        .setHTML(popupContent)
+        .addTo(map);
+
+        setTimeout(() => {
+            const container = document.getElementById('current-popup');
+            if (container) container.scrollTop = 0;
+        }, 50);
+    };
+
+    // リストがクリックされたときに詳細を表示する処理
+    window.showDetail = function(index) {
+        renderPopup(window.clickedFeatures[index].properties, window.clickedCoord);
+    };
+
+    // 7. マウスカーソルの変更（ピンの上で指マークにする）
+    map.on('mouseenter', 'points-layer', () => {
+        map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', 'points-layer', () => {
+        map.getCanvas().style.cursor = '';
+    });
+
+    // ★追加：画像をクリックしたときにモーダルを開く処理
+    window.openImageModal = function(src) {
+        const modal = document.getElementById('image-modal');
+        const expandedImg = document.getElementById('expanded-image');
+        expandedImg.src = src;          // クリックされた画像のURLをセット
+        modal.style.display = 'block';  // 非表示にしていたモーダルを表示
+    };
+
+    // ★追加：モーダル（拡大画像や黒い背景）をクリックしたときに閉じる処理
+    window.closeImageModal = function() {
+        const modal = document.getElementById('image-modal');
+        modal.style.display = 'none';   // モーダルを再び非表示にする
+        document.getElementById('expanded-image').src = ""; // 画像をクリア
+    };
+</script>
+
+</body>
+</html>
