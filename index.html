@@ -13,14 +13,13 @@
     <script src="custom_style.js"></script>
     <style>
         :root {
-            --app-top: 0px;
-            --app-left: 0px;
-            --app-width: 100vw;
             --app-height: 100dvh;
         }
 
         html,
         body {
+            position: fixed;
+            inset: 0;
             margin: 0;
             padding: 0;
             width: 100%;
@@ -31,16 +30,13 @@
         }
 
         body {
-            position: fixed;
-            inset: 0;
             touch-action: none;
         }
 
         #app {
             position: fixed;
-            top: var(--app-top);
-            left: var(--app-left);
-            width: var(--app-width);
+            inset: 0;
+            width: 100%;
             height: var(--app-height);
             overflow: hidden;
             background: #ffffff;
@@ -232,60 +228,47 @@
     // ★追加：スマホの二本指での回転を禁止（拡大・縮小はそのまま機能します）
     map.touchZoomRotate.disableRotation();
 
-    // スマホのブラウザで実際に見えている範囲に、地図画面全体を合わせる
+    // スマホで実際に表示できる高さに地図画面全体を合わせる
     if ('scrollRestoration' in history) {
         history.scrollRestoration = 'manual';
     }
 
     let viewportTimer = null;
+    let previousViewportHeight = 0;
 
     function updateViewportHeight() {
-        const viewport = window.visualViewport;
+        const visualHeight = window.visualViewport
+            ? window.visualViewport.height
+            : 0;
 
         const viewportHeight =
-            viewport?.height ||
-            window.innerHeight ||
-            document.documentElement.clientHeight;
+            visualHeight > 0
+                ? visualHeight
+                : (
+                    window.innerHeight ||
+                    document.documentElement.clientHeight
+                );
 
-        const viewportWidth =
-            viewport?.width ||
-            window.innerWidth ||
-            document.documentElement.clientWidth;
+        const height = Math.round(viewportHeight);
 
-        const viewportTop =
-            viewport?.offsetTop || 0;
+        // 高さが変わった場合だけ更新する
+        if (height !== previousViewportHeight) {
+            previousViewportHeight = height;
 
-        const viewportLeft =
-            viewport?.offsetLeft || 0;
+            document.documentElement.style.setProperty(
+                '--app-height',
+                `${height}px`
+            );
+        }
 
-        const root = document.documentElement;
-
-        root.style.setProperty(
-            '--app-top',
-            `${Math.round(viewportTop)}px`
-        );
-
-        root.style.setProperty(
-            '--app-left',
-            `${Math.round(viewportLeft)}px`
-        );
-
-        root.style.setProperty(
-            '--app-width',
-            `${Math.round(viewportWidth)}px`
-        );
-
-        root.style.setProperty(
-            '--app-height',
-            `${Math.round(viewportHeight)}px`
-        );
+        window.scrollTo(0, 0);
 
         requestAnimationFrame(() => {
             map.resize();
         });
     }
 
-    // 初回表示では、ブラウザのURL欄や操作パネルが
+    // 初回表示時に、ブラウザのURL欄や操作パネルが
     // 落ち着くまで3秒間だけ自動調整する
     function stabilizeViewport() {
         if (viewportTimer !== null) {
@@ -298,64 +281,7 @@
 
         viewportTimer = setInterval(() => {
             updateViewportHeight();
-            count++;
-
-            if (count >= 15) {
-                clearInterval(viewportTimer);
-                viewportTimer = null;
-                updateViewportHeight();
-            }
-        }, 200);
-    }
-
-    // 通常の表示開始
-    stabilizeViewport();
-
-    // 画面サイズが変化したとき
-    window.addEventListener(
-        'resize',
-        updateViewportHeight,
-        { passive: true }
-    );
-
-    // URL欄や下部操作パネルが動いたとき
-    if (window.visualViewport) {
-        window.visualViewport.addEventListener(
-            'resize',
-            updateViewportHeight,
-            { passive: true }
-        );
-
-        window.visualViewport.addEventListener(
-            'scroll',
-            updateViewportHeight,
-            { passive: true }
-        );
-    }
-
-    // 戻る操作などでページが再表示されたとき
-    window.addEventListener(
-        'pageshow',
-        stabilizeViewport
-    );
-
-    // 画面を縦向き・横向きに変更したとき
-    window.addEventListener(
-        'orientationchange',
-        () => {
-            setTimeout(stabilizeViewport, 100);
-        }
-    );
-
-    // 別のアプリからブラウザへ戻ったとき
-    document.addEventListener(
-        'visibilitychange',
-        () => {
-            if (!document.hidden) {
-                stabilizeViewport();
-            }
-        }
-    );
+    
 
     // ★追加：＋・−ボタン（ナビゲーションコントロール）を画面右上に追加
     // 今回は回転を禁止しているため、コンパス（方位）ボタンは非表示にします
