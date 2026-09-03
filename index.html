@@ -35,7 +35,8 @@
 
         #app {
             position: fixed;
-            inset: 0;
+            top: 0;
+            left: 0;
             width: 100%;
             height: var(--app-height);
             overflow: hidden;
@@ -228,7 +229,7 @@
     // ★追加：スマホの二本指での回転を禁止（拡大・縮小はそのまま機能します）
     map.touchZoomRotate.disableRotation();
 
-    // スマホで実際に表示できる高さに地図画面全体を合わせる
+    // スマホで実際に表示されている範囲に地図全体を合わせる
     if ('scrollRestoration' in history) {
         history.scrollRestoration = 'manual';
     }
@@ -236,99 +237,111 @@
     let viewportTimer = null;
 
     function updateViewportHeight() {
-        let height;
-
-        if (
-            window.visualViewport &&
-            window.visualViewport.height > 0
-        ) {
-            height = window.visualViewport.height;
-        } else if (window.innerHeight > 0) {
-            height = window.innerHeight;
-        } else {
-            height = document.documentElement.clientHeight;
-        }
-
         const app = document.getElementById('app');
 
         if (!app) {
             return;
         }
 
-        app.style.height = `${Math.ceil(height)}px`;
+        let viewportHeight = window.innerHeight;
+        let viewportWidth = window.innerWidth;
+        let viewportTop = 0;
+        let viewportLeft = 0;
+
+        if (window.visualViewport) {
+            if (window.visualViewport.height > 0) {
+                viewportHeight = window.visualViewport.height;
+            }
+
+            if (window.visualViewport.width > 0) {
+                viewportWidth = window.visualViewport.width;
+            }
+
+            viewportTop = window.visualViewport.offsetTop || 0;
+            viewportLeft = window.visualViewport.offsetLeft || 0;
+        }
+
+        app.style.top = `${Math.round(viewportTop)}px`;
+        app.style.left = `${Math.round(viewportLeft)}px`;
+        app.style.width = `${Math.ceil(viewportWidth)}px`;
+        app.style.height = `${Math.ceil(viewportHeight)}px`;
 
         requestAnimationFrame(() => {
             map.resize();
         });
     }
 
-    // URL欄や操作パネルの高さが確定するまで、
-    // 最初の3秒間だけ繰り返し調整する
+    // QRコードから開いた直後など、URL欄の位置が確定するまで調整を続ける
     function stabilizeViewport() {
         if (viewportTimer !== null) {
             clearInterval(viewportTimer);
             viewportTimer = null;
         }
 
-        let count = 0;
-
+        window.scrollTo(0, 0);
         updateViewportHeight();
 
+        let count = 0;
+
         viewportTimer = setInterval(() => {
+            window.scrollTo(0, 0);
             updateViewportHeight();
+
             count++;
 
-            if (count >= 15) {
+            if (count >= 30) {
                 clearInterval(viewportTimer);
                 viewportTimer = null;
-
                 updateViewportHeight();
             }
         }, 200);
     }
 
-    // 最初の表示時
-    stabilizeViewport();
+    // HTMLの読み込みが完了した後にも実行
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', stabilizeViewport);
+    } else {
+        stabilizeViewport();
+    }
+
+    // ページ全体の読み込み完了後にも実行
+    window.addEventListener('load', stabilizeViewport);
 
     // 通常の画面サイズ変更
-    window.addEventListener(
-        'resize',
-        updateViewportHeight,
-        { passive: true }
-    );
+    window.addEventListener('resize', updateViewportHeight, {
+        passive: true
+    });
 
-    // URL欄や操作パネルの開閉
+    // スマホのURL欄や操作パネルが開閉された場合
     if (window.visualViewport) {
         window.visualViewport.addEventListener(
             'resize',
             updateViewportHeight,
             { passive: true }
         );
+
+        window.visualViewport.addEventListener(
+            'scroll',
+            updateViewportHeight,
+            { passive: true }
+        );
     }
 
     // 戻る操作などでページが再表示された場合
-    window.addEventListener(
-        'pageshow',
-        stabilizeViewport
-    );
+    window.addEventListener('pageshow', stabilizeViewport);
 
-    // 画面を縦向き・横向きに変更した場合
-    window.addEventListener(
-        'orientationchange',
-        () => {
-            setTimeout(stabilizeViewport, 100);
-        }
-    );
+    // 縦向きと横向きを切り替えた場合
+    window.addEventListener('orientationchange', () => {
+        setTimeout(stabilizeViewport, 100);
+        setTimeout(stabilizeViewport, 500);
+    });
 
-    // 別のアプリからブラウザへ戻った場合
-    document.addEventListener(
-        'visibilitychange',
-        () => {
-            if (!document.hidden) {
-                stabilizeViewport();
-            }
+    // QRコードアプリなどからブラウザへ戻った場合
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            stabilizeViewport();
         }
-    );
+    });
                 
     // ★追加：＋・−ボタン（ナビゲーションコントロール）を画面右上に追加
     // 今回は回転を禁止しているため、コンパス（方位）ボタンは非表示にします
