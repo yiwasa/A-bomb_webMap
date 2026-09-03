@@ -13,6 +13,9 @@
     <script src="custom_style.js"></script>
     <style>
         :root {
+            --app-top: 0px;
+            --app-left: 0px;
+            --app-width: 100vw;
             --app-height: 100dvh;
         }
 
@@ -28,16 +31,26 @@
         }
 
         body {
+            position: fixed;
+            inset: 0;
             touch-action: none;
         }
 
-        #map {
+        #app {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            width: 100%;
+            top: var(--app-top);
+            left: var(--app-left);
+            width: var(--app-width);
             height: var(--app-height);
+            overflow: hidden;
+            background: #ffffff;
+        }
+
+        #map {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
         }
 
         
@@ -127,15 +140,14 @@
         }
         /* ★追加：画像拡大用のモーダル（ライトボックス）のスタイル */
         #image-modal {
-            display: none; /* 初期状態は非表示 */
-            position: fixed;
-            z-index: 1000; /* 地図やポップアップより手前に表示 */
-            left: 0;
-            top: 0;
+            display: none;
+            position: absolute;
+            z-index: 1000;
+            inset: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.8); /* 背景を半透明の黒に */
-            cursor: pointer; /* クリックで閉じられることを示すカーソル */
+            background-color: rgba(0, 0, 0, 0.8);
+            cursor: pointer;
         }
         #expanded-image {
             margin: auto;
@@ -179,7 +191,7 @@
     </style>
 </head>
 <body>
-
+<div id="app">
 <div id="image-modal" onclick="closeImageModal()">
     <img id="expanded-image" src="">
 </div>
@@ -198,7 +210,7 @@
     <div><svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" fill="#333333" stroke="#ffffff" stroke-width="2"/><circle cx="12" cy="13" r="4" fill="#ffffff"/></svg>写真あり</div>
     <div><svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5V7L12 12 2 7v10z" fill="#333333" stroke="#ffffff" stroke-width="2"/></svg>3Dデータあり</div>
 </div>
-
+</div>
 <script>
     // 1. 地図の初期化
     const map = new maplibregl.Map({
@@ -220,106 +232,130 @@
     // ★追加：スマホの二本指での回転を禁止（拡大・縮小はそのまま機能します）
     map.touchZoomRotate.disableRotation();
 
-    // ページのスクロール位置を復元させない
-        if ('scrollRestoration' in history) {
-            history.scrollRestoration = 'manual';
-        }
+    // スマホのブラウザで実際に見えている範囲に、地図画面全体を合わせる
+    if ('scrollRestoration' in history) {
+        history.scrollRestoration = 'manual';
+    }
 
-        let viewportTimer = null;
+    let viewportTimer = null;
 
-        function updateViewportHeight() {
-            const viewportHeight =
-                window.visualViewport?.height ||
-                window.innerHeight ||
-                document.documentElement.clientHeight;
+    function updateViewportHeight() {
+        const viewport = window.visualViewport;
 
-            const height = Math.round(viewportHeight);
+        const viewportHeight =
+            viewport?.height ||
+            window.innerHeight ||
+            document.documentElement.clientHeight;
 
-            document.documentElement.style.setProperty(
-                '--app-height',
-                `${height}px`
-            );
+        const viewportWidth =
+            viewport?.width ||
+            window.innerWidth ||
+            document.documentElement.clientWidth;
 
-            window.scrollTo(0, 0);
+        const viewportTop =
+            viewport?.offsetTop || 0;
 
-            requestAnimationFrame(() => {
-                map.resize();
-            });
-        }
+        const viewportLeft =
+            viewport?.offsetLeft || 0;
 
-        // 初回表示時に、ブラウザの上下バーが落ち着くまで再調整する
-        function stabilizeViewport() {
-            clearInterval(viewportTimer);
+        const root = document.documentElement;
 
-            let count = 0;
-
-            updateViewportHeight();
-
-            viewportTimer = setInterval(() => {
-                updateViewportHeight();
-                count++;
-
-                // 3秒間調整したら終了
-                if (count >= 15) {
-                    clearInterval(viewportTimer);
-                    viewportTimer = null;
-
-                    updateViewportHeight();
-                }
-            }, 200);
-        }
-
-        // 通常の表示開始
-        stabilizeViewport();
-
-        // 通常の画面サイズ変更
-        window.addEventListener(
-            'resize',
-            updateViewportHeight,
-            { passive: true }
+        root.style.setProperty(
+            '--app-top',
+            `${Math.round(viewportTop)}px`
         );
 
-        // アプリ内ブラウザの表示領域変更
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener(
-                'resize',
-                updateViewportHeight,
-                { passive: true }
-            );
+        root.style.setProperty(
+            '--app-left',
+            `${Math.round(viewportLeft)}px`
+        );
+
+        root.style.setProperty(
+            '--app-width',
+            `${Math.round(viewportWidth)}px`
+        );
+
+        root.style.setProperty(
+            '--app-height',
+            `${Math.round(viewportHeight)}px`
+        );
+
+        requestAnimationFrame(() => {
+            map.resize();
+        });
+    }
+
+    // 初回表示では、ブラウザのURL欄や操作パネルが
+    // 落ち着くまで3秒間だけ自動調整する
+    function stabilizeViewport() {
+        if (viewportTimer !== null) {
+            clearInterval(viewportTimer);
         }
 
-        // 戻る操作やページキャッシュからの復帰
-        window.addEventListener('pageshow', stabilizeViewport);
+        let count = 0;
 
-        // 画面回転
-        window.addEventListener('orientationchange', () => {
-            setTimeout(stabilizeViewport, 100);
-        });
+        updateViewportHeight();
 
-        // アプリからブラウザへ戻った場合
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) {
-                stabilizeViewport();
+        viewportTimer = setInterval(() => {
+            updateViewportHeight();
+            count++;
+
+            if (count >= 15) {
+                clearInterval(viewportTimer);
+                viewportTimer = null;
+                updateViewportHeight();
             }
-        });
+        }, 200);
+    }
 
-    // QRリーダー内ブラウザなどで、表示領域だけが変わった場合
+    // 通常の表示開始
+    stabilizeViewport();
+
+    // 画面サイズが変化したとき
+    window.addEventListener(
+        'resize',
+        updateViewportHeight,
+        { passive: true }
+    );
+
+    // URL欄や下部操作パネルが動いたとき
     if (window.visualViewport) {
         window.visualViewport.addEventListener(
             'resize',
             updateViewportHeight,
             { passive: true }
         );
+
+        window.visualViewport.addEventListener(
+            'scroll',
+            updateViewportHeight,
+            { passive: true }
+        );
     }
 
-    // ページキャッシュから復帰した場合にも再計算
-    window.addEventListener('pageshow', () => {
-        updateViewportHeight();
+    // 戻る操作などでページが再表示されたとき
+    window.addEventListener(
+        'pageshow',
+        stabilizeViewport
+    );
 
-        // アプリ内ブラウザのツールバー確定を待って、もう一度調整
-        setTimeout(updateViewportHeight, 100);
-        setTimeout(updateViewportHeight, 500);
-    });
+    // 画面を縦向き・横向きに変更したとき
+    window.addEventListener(
+        'orientationchange',
+        () => {
+            setTimeout(stabilizeViewport, 100);
+        }
+    );
+
+    // 別のアプリからブラウザへ戻ったとき
+    document.addEventListener(
+        'visibilitychange',
+        () => {
+            if (!document.hidden) {
+                stabilizeViewport();
+            }
+        }
+    );
 
     // ★追加：＋・−ボタン（ナビゲーションコントロール）を画面右上に追加
     // 今回は回転を禁止しているため、コンパス（方位）ボタンは非表示にします
