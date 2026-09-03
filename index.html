@@ -234,45 +234,40 @@
     }
 
     let viewportTimer = null;
-    let previousViewportHeight = 0;
 
     function updateViewportHeight() {
-        const visualHeight = window.visualViewport
-            ? window.visualViewport.height
-            : 0;
+        let height;
 
-        const viewportHeight =
-            visualHeight > 0
-                ? visualHeight
-                : (
-                    window.innerHeight ||
-                    document.documentElement.clientHeight
-                );
-
-        const height = Math.round(viewportHeight);
-
-        // 高さが変わった場合だけ更新する
-        if (height !== previousViewportHeight) {
-            previousViewportHeight = height;
-
-            document.documentElement.style.setProperty(
-                '--app-height',
-                `${height}px`
-            );
+        if (
+            window.visualViewport &&
+            window.visualViewport.height > 0
+        ) {
+            height = window.visualViewport.height;
+        } else if (window.innerHeight > 0) {
+            height = window.innerHeight;
+        } else {
+            height = document.documentElement.clientHeight;
         }
 
-        window.scrollTo(0, 0);
+        const app = document.getElementById('app');
+
+        if (!app) {
+            return;
+        }
+
+        app.style.height = `${Math.ceil(height)}px`;
 
         requestAnimationFrame(() => {
             map.resize();
         });
     }
 
-    // 初回表示時に、ブラウザのURL欄や操作パネルが
-    // 落ち着くまで3秒間だけ自動調整する
+    // URL欄や操作パネルの高さが確定するまで、
+    // 最初の3秒間だけ繰り返し調整する
     function stabilizeViewport() {
         if (viewportTimer !== null) {
             clearInterval(viewportTimer);
+            viewportTimer = null;
         }
 
         let count = 0;
@@ -281,8 +276,60 @@
 
         viewportTimer = setInterval(() => {
             updateViewportHeight();
-    
+            count++;
 
+            if (count >= 15) {
+                clearInterval(viewportTimer);
+                viewportTimer = null;
+
+                updateViewportHeight();
+            }
+        }, 200);
+    }
+
+    // 最初の表示時
+    stabilizeViewport();
+
+    // 通常の画面サイズ変更
+    window.addEventListener(
+        'resize',
+        updateViewportHeight,
+        { passive: true }
+    );
+
+    // URL欄や操作パネルの開閉
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener(
+            'resize',
+            updateViewportHeight,
+            { passive: true }
+        );
+    }
+
+    // 戻る操作などでページが再表示された場合
+    window.addEventListener(
+        'pageshow',
+        stabilizeViewport
+    );
+
+    // 画面を縦向き・横向きに変更した場合
+    window.addEventListener(
+        'orientationchange',
+        () => {
+            setTimeout(stabilizeViewport, 100);
+        }
+    );
+
+    // 別のアプリからブラウザへ戻った場合
+    document.addEventListener(
+        'visibilitychange',
+        () => {
+            if (!document.hidden) {
+                stabilizeViewport();
+            }
+        }
+    );
+                
     // ★追加：＋・−ボタン（ナビゲーションコントロール）を画面右上に追加
     // 今回は回転を禁止しているため、コンパス（方位）ボタンは非表示にします
     map.addControl(new maplibregl.NavigationControl({
